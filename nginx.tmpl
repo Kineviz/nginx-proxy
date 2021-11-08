@@ -166,6 +166,7 @@ upstream {{ $upstream_name }} {
 	{{/* If only 1 port exposed, use that as a default, else 80 */}}
 	{{ $defaultPort := (when (eq (len $container.Addresses) 1) (first $container.Addresses) (dict "Port" "80")).Port }}
 	{{ $port := (coalesce $container.Env.VIRTUAL_PORT $defaultPort) }}
+	{{ $ip := (coalesce $container.Env.VIRTUAL_IP "") }}
 	{{ $address := where $container.Addresses "Port" $port | first }}
 	{{ if $debug }}
 	# Exposed ports: {{ $container.Addresses }}
@@ -175,6 +176,12 @@ upstream {{ $upstream_name }} {
 	# /!\ Virtual port not exposed
 		{{ end }}
 	{{ end }}
+	 
+	{{ if $ip }}
+		{{ $server_found = "true" }}
+	server {{ $ip }}:{{ $port }} ;
+	{{ end }}
+
 	{{ range $knownNetwork := $CurrentContainer.Networks }}
 		{{ range $containerNetwork := $container.Networks }}
 			{{ if (and (ne $containerNetwork.Name "ingress") (or (eq $knownNetwork.Name $containerNetwork.Name) (eq $knownNetwork.Name "host"))) }}
@@ -220,7 +227,7 @@ upstream {{ $upstream_name }} {
 {{ $proto := trim (or (first (groupByKeys $containers "Env.VIRTUAL_PROTO")) "http") }}
 
 {{/* Get the SERVER_TOKENS defined by containers w/ the same vhost, falling back to "" */}}
-{{ $server_tokens := trim (or (first (groupByKeys $containers "Env.SERVER_TOKENS")) "") }}
+{{ $server_tokens := trim (or (first (groupByKeys $containers "Env.SERVER_TOKENS")) "off") }}
 
 {{/* Get the NETWORK_ACCESS defined by containers w/ the same vhost, falling back to "external" */}}
 {{ $network_tag := or (first (groupByKeys $containers "Env.NETWORK_ACCESS")) "external" }}
@@ -231,8 +238,8 @@ upstream {{ $upstream_name }} {
 {{/* Get the SSL_POLICY defined by containers w/ the same vhost, falling back to empty string (use default) */}}
 {{ $ssl_policy := or (first (groupByKeys $containers "Env.SSL_POLICY")) "" }}
 
-{{/* Get the HSTS defined by containers w/ the same vhost, falling back to "max-age=31536000" */}}
-{{ $hsts := or (first (groupByKeys $containers "Env.HSTS")) (or $.Env.HSTS "max-age=31536000") }}
+{{/* Get the HSTS defined by containers w/ the same vhost, falling back to "max-age=31536000;includeSubDomains;" */}}
+{{ $hsts := or (first (groupByKeys $containers "Env.HSTS")) (or $.Env.HSTS "max-age=31536000;includeSubDomains;") }}
 
 {{/* Get the VIRTUAL_ROOT By containers w/ use fastcgi root */}}
 {{ $vhost_root := or (first (groupByKeys $containers "Env.VIRTUAL_ROOT")) "/var/www/public" }}
@@ -344,6 +351,10 @@ server {
 		grpc_pass {{ trim $proto }}://{{ trim $upstream_name }};
 		{{ else }}
 		proxy_pass {{ trim $proto }}://{{ trim $upstream_name }};
+		proxy_set_header Cookie $http_cookie;
+		## proxy_cookie_domain {{ trim $upstream_name }} $http_host;
+		## Force append the Domain. The step is very important
+		proxy_cookie_flags ~ secure samesite=none Domain=$http_host;
 		{{ end }}
 
 		{{ if (exists (printf "/etc/nginx/htpasswd/%s" $host)) }}
