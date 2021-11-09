@@ -21,12 +21,16 @@ DOCKERHOST=$2
     echo "Read the docker registry host : $DOCKERHOST "
 fi
 
+CURRENT_TAG="$(git describe --tags --abbrev=0)"
+
 build(){
     cd "${CURRENTPATH}"
     if [ ! -f "${CURRENTPATH}/Dockerfile.alpine" ]; then 
         echo "Can't found ./Dockerfile.alpine file"
         exit 1
     else 
+        docker pull "${DOCKERHOST}/${PORJECTNAME}:latest" \
+        && \
         docker build \
         --build-arg http_proxy=${http_proxy} \
         --build-arg https_proxy=${https_proxy} \
@@ -35,8 +39,15 @@ build(){
 }
 
 docker_push_release(){
-    echo "will push docker image ${DOCKERHOST}/${PORJECTNAME}:latest to ${DOCKERHOST}"
+    echo "Will push docker image ${DOCKERHOST}/${PORJECTNAME}:latest to ${DOCKERHOST}"
     docker push "${DOCKERHOST}/${PORJECTNAME}:latest"
+
+if [ ! -z "$CURRENT_TAG" ]; then
+    echo "Will tag & push docker image ${DOCKERHOST}/${PORJECTNAME}:${CURRENT_TAG} to ${DOCKERHOST}"
+    docker tag "${DOCKERHOST}/${PORJECTNAME}:latest" "${DOCKERHOST}/${PORJECTNAME}:${CURRENT_TAG}"
+    docker push "${DOCKERHOST}/${PORJECTNAME}:${CURRENT_TAG}"
+fi
+
 }
 
 
