@@ -122,6 +122,9 @@ proxy_set_header Proxy "";
 {{ $access_log := (or (and (not $.Env.DISABLE_ACCESS_LOGS) "access_log /var/log/nginx/access.log vhost;") "") }}
 
 {{ $enable_ipv6 := eq (or ($.Env.ENABLE_IPV6) "") "true" }}
+
+{{ $default_redirect := or ($.Env.DEFAULT_REDIRECT) "" }}
+
 server {
 	server_name _; # This is just an invalid value which will never trigger on a real hostname.
 	server_tokens off;
@@ -130,7 +133,14 @@ server {
 	listen [::]:{{ $external_http_port }};
 	{{ end }}
 	{{ $access_log }}
-	return 503;
+
+	{{ if $default_redirect }}
+	 location / {
+ 		return 302 	{{ $default_redirect }};
+	}
+	{{ else }}
+	 	return 503;
+	{{ end }}
 }
 
 {{ if (and (exists "/etc/nginx/certs/default.crt") (exists "/etc/nginx/certs/default.key")) }}
@@ -142,7 +152,14 @@ server {
 	listen [::]:{{ $external_https_port }} ssl http2;
 	{{ end }}
 	{{ $access_log }}
-	return 503;
+	
+	{{ if $default_redirect }}
+	 location / {
+ 		return 302 	{{ $default_redirect }};
+	}
+	{{ else }}
+	 	return 503;
+	{{ end }}
 
 	ssl_session_cache shared:SSL:50m;
 	ssl_session_tickets off;
@@ -156,6 +173,7 @@ server {
 {{ $host := trim $host }}
 {{ $is_regexp := hasPrefix "~" $host }}
 {{ $upstream_name := when (or $is_regexp $sha1_upstream_name) (sha1 $host) $host }}
+{{ $upstream_name = (replace $upstream_name "." "_" -1) }}
 
 # {{ $host }}
 upstream {{ $upstream_name }} {
@@ -244,6 +262,8 @@ upstream {{ $upstream_name }} {
 {{/* Get the VIRTUAL_ROOT By containers w/ use fastcgi root */}}
 {{ $vhost_root := or (first (groupByKeys $containers "Env.VIRTUAL_ROOT")) "/var/www/public" }}
 
+{{/* Get the websocket proxy only info */}}
+{{ $ws_only := or (first (groupByKeys $containers "Env.WS_ONLY")) "" }}
 
 {{/* Get the first cert name defined by containers w/ the same vhost */}}
 {{ $certName := (first (groupByKeys $containers "Env.CERT_NAME")) }}
@@ -333,7 +353,7 @@ server {
 	ssl_trusted_certificate {{ printf "/etc/nginx/certs/%s.chain.pem" $cert }};
 		{{ end }}
 
-		{{ else if $has_default_cert }}
+	{{ else if $has_default_cert }}
 	ssl_certificate /etc/nginx/certs/default.crt;
 	ssl_certificate_key /etc/nginx/certs/default.key;
 	{{ end }}
@@ -346,6 +366,11 @@ server {
 	include {{ printf "/etc/nginx/vhost.d/%s" $host }};
 	{{ else if (exists "/etc/nginx/vhost.d/default") }}
 	include /etc/nginx/vhost.d/default;
+	{{ end }}
+
+	{{ if $ws_only }}
+	proxy_set_header Upgrade "WebSocket";
+	proxy_set_header Connection "Upgrade";
 	{{ end }}
 
 	location / {
@@ -361,9 +386,17 @@ server {
 		{{ else }}
 		proxy_pass {{ trim $proto }}://{{ trim $upstream_name }};
 		proxy_set_header Cookie $http_cookie;
-		proxy_cookie_domain {{ trim $upstream_name }} $http_host;
+		proxy_set_header host {{ trim $host }};
+		proxy_cookie_domain {{ trim $host }} $http_host;
 		## Force append the Domain. The step is very important
 		proxy_cookie_flags ~ secure samesite=none Domain=$http_host;
+		proxy_hide_header X-Powered-By;
+		proxy_hide_header X-CF-Powered-By;
+			{{ if (not (or (eq $https_method "noredirect") (eq $hsts "off"))) }}
+		proxy_hide_header Strict-Transport-Security;
+			{{ end }}
+		proxy_set_header X-Forwarded-Proto https;
+
 		{{ end }}
 
 		{{ if (exists (printf "/etc/nginx/htpasswd/%s" $host)) }}
@@ -417,9 +450,11 @@ server {
 		{{ else }}
 		proxy_pass {{ trim $proto }}://{{ trim $upstream_name }};
 		proxy_set_header Cookie $http_cookie;
-		proxy_cookie_domain {{ trim $upstream_name }} $http_host;
+		proxy_cookie_domain {{ trim $host }} $http_host;
 		## Force append the Domain. The step is very important
 		proxy_cookie_flags ~ secure samesite=none Domain=$http_host;
+		proxy_hide_header X-Powered-By;
+		proxy_hide_header x-cf-powered-by;
 		{{ end }}
 		{{ if (exists (printf "/etc/nginx/htpasswd/%s" $host)) }}
 		auth_basic	"Restricted {{ $host }}";
