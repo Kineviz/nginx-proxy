@@ -1,0 +1,28 @@
+# This is a sample build configuration for JavaScript.
+# Check our guides at https://confluence.atlassian.com/x/14UWN for more examples.
+# Only use spaces to indent your .yml configuration.
+# -----
+# Please goto validator at https://bitbucket-pipelines.prod.public.atl-paas.net/validator
+image: node:10.15.3
+
+##define
+definitions:
+
+  steps:
+    - step: &docker-build-image
+        name: Docker build Image release
+        caches:
+          - docker
+        script:
+          - docker login -u $DOCKER_HUB_USER -p $DOCKER_HUB_PASSWORD
+          - ./publish.sh release
+        services:
+          - docker
+
+pipelines:
+  branches:
+    master:
+      - step: *docker-build-image
+
+      # after-script:
+      #   - ./send_notifcation.sh $BITBUCKET_EXIT_CODE
