@@ -114,6 +114,7 @@ proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 proxy_set_header X-Forwarded-Proto $proxy_x_forwarded_proto;
 proxy_set_header X-Forwarded-Ssl $proxy_x_forwarded_ssl;
 proxy_set_header X-Forwarded-Port $proxy_x_forwarded_port;
+proxy_set_header X-Original-URI $request_uri;
 
 # Mitigate httpoxy attack (see README for details)
 proxy_set_header Proxy "";
@@ -395,8 +396,9 @@ server {
 			{{ if (not (or (eq $https_method "noredirect") (eq $hsts "off"))) }}
 		proxy_hide_header Strict-Transport-Security;
 			{{ end }}
-		proxy_set_header X-Forwarded-Proto https;
-
+		proxy_set_header Host $http_host;
+		proxy_set_header X-Real-IP $remote_addr;
+		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 		{{ end }}
 
 		{{ if (exists (printf "/etc/nginx/htpasswd/%s" $host)) }}
@@ -455,6 +457,12 @@ server {
 		proxy_cookie_flags ~ samesite=none Domain=$http_host;
 		proxy_hide_header X-Powered-By;
 		proxy_hide_header x-cf-powered-by;
+			{{ if (not (or (eq $https_method "noredirect") (eq $hsts "off"))) }}
+		proxy_hide_header Strict-Transport-Security;
+			{{ end }}
+		proxy_set_header Host $http_host;
+		proxy_set_header X-Real-IP $remote_addr;
+		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 		{{ end }}
 		{{ if (exists (printf "/etc/nginx/htpasswd/%s" $host)) }}
 		auth_basic	"Restricted {{ $host }}";

@@ -1,9 +1,9 @@
 # setup build arguments for version of dependencies to use
-ARG DOCKER_GEN_VERSION=0.7.7
+ARG DOCKER_GEN_VERSION=0.8.2
 ARG FOREGO_VERSION=v0.17.0
 
 # Use a specific version of golang to build both binaries
-FROM golang:1.16.7 as gobuilder
+FROM golang:1.17.8 as gobuilder
 
 # Build docker-gen from scratch
 FROM gobuilder as dockergen
@@ -36,7 +36,7 @@ RUN git clone https://github.com/nginx-proxy/forego/ \
    && rm -rf /go/forego
 
 # Build the final image
-FROM nginx:1.21.3
+FROM nginx:1.21.6
 LABEL maintainer="Nicolas Duchon <nicolas.duchon@gmail.com> (@buchdag)"
 
 # Install wget and install/updates certificates
